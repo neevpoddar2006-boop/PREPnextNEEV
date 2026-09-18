@@ -11,15 +11,28 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const RAW_URL = import.meta.env.VITE_SUPABASE_URL;
+const RAW_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  // Fail loudly so misconfigured prod builds don't silently fall back to a broken auth flow.
-  throw new Error(
-    "Missing Supabase env vars. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in client/.env (or in Vercel's environment variables)."
+// True once real Supabase credentials are wired up (server/.env + client/.env
+// with a live project). Until then we run in a no-backend preview mode
+// instead of crashing the whole app — see useAuth.tsx's AUTH_BYPASS.
+export const SUPABASE_CONFIGURED = Boolean(RAW_URL && RAW_ANON_KEY);
+
+if (!SUPABASE_CONFIGURED) {
+  // Don't throw here — an uncaught error at module scope (no error boundary
+  // wraps the app) takes down the entire React tree before anything paints,
+  // which is why an unconfigured prod deploy showed a blank page instead of
+  // a real error. Warn instead and fall back to a placeholder client; useAuth
+  // never actually calls it while SUPABASE_CONFIGURED is false.
+  console.warn(
+    "[supabase] VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY are not set — running without a backend. " +
+      "Sign-in is bypassed (preview mode). Set real values in client/.env (and on Vercel) to enable it."
   );
 }
+
+const SUPABASE_URL = RAW_URL || "https://placeholder.supabase.co";
+const SUPABASE_ANON_KEY = RAW_ANON_KEY || "placeholder-anon-key";
 
 const globalForSupabase = globalThis as unknown as { __prepnextSupabase?: SupabaseClient };
 

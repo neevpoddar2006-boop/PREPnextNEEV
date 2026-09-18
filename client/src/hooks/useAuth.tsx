@@ -32,7 +32,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { supabase } from "../lib/supabase";
+import { supabase, SUPABASE_CONFIGURED } from "../lib/supabase";
 import {
   AUTH_TOKEN_KEY,
   AUTH_USER_KEY,
@@ -46,20 +46,22 @@ import {
 
 const SUPA_STORAGE_KEY = "prepnext.supabase.auth.v1";
 
-// Local-dev escape hatch: when no real Supabase project is wired up yet
-// (VITE_SUPABASE_URL/ANON_KEY are placeholders), set VITE_DEV_SKIP_AUTH=true
-// in client/.env to bypass Supabase entirely and act as a permanently
-// signed-in mock user. Lets every RequireAuth-gated page render locally
-// before a database exists. Never set this in production.
-const DEV_SKIP_AUTH = import.meta.env.VITE_DEV_SKIP_AUTH === "true";
-const DEV_MOCK_TOKEN = "dev-skip-auth-token";
-const DEV_MOCK_USER: AuthUser = {
-  id: "dev-local-user",
-  email: "dev@localhost",
-  displayName: "Dev User",
+// No-backend preview mode: whenever Supabase isn't really configured yet
+// (VITE_SUPABASE_URL/ANON_KEY missing — true on a fresh checkout AND on a
+// prod deploy before real credentials are added), skip Supabase entirely and
+// act as a permanently signed-in preview user instead of crashing. This is
+// what let the app render at all before a database existed; it turns itself
+// off automatically the moment real Supabase credentials are set, in any
+// environment. Can also be forced on locally via VITE_AUTH_BYPASS=true.
+const AUTH_BYPASS = !SUPABASE_CONFIGURED || import.meta.env.VITE_AUTH_BYPASS === "true";
+const BYPASS_TOKEN = "preview-mode-token";
+const BYPASS_USER: AuthUser = {
+  id: "preview-user",
+  email: "preview@prepnext.local",
+  displayName: "Preview User",
   profileComplete: true,
-  fullName: "Dev User",
-  collegeName: "Local Dev",
+  fullName: "Preview User",
+  collegeName: "Preview Mode",
   branch: "CSE",
   yearOfStudy: 3,
   targetRoles: ["SDE"],
@@ -111,9 +113,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
  */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Prime from localStorage so the first render already reflects a logged-in user.
-  const [token, setToken] = useState<string | null>(() => (DEV_SKIP_AUTH ? DEV_MOCK_TOKEN : readInitialToken()));
-  const [user, setUser] = useState<AuthUser | null>(() => (DEV_SKIP_AUTH ? DEV_MOCK_USER : readInitialUser()));
-  const [loading, setLoading] = useState<boolean>(() => (DEV_SKIP_AUTH ? false : !readInitialToken()));
+  const [token, setToken] = useState<string | null>(() => (AUTH_BYPASS ? BYPASS_TOKEN : readInitialToken()));
+  const [user, setUser] = useState<AuthUser | null>(() => (AUTH_BYPASS ? BYPASS_USER : readInitialUser()));
+  const [loading, setLoading] = useState<boolean>(() => (AUTH_BYPASS ? false : !readInitialToken()));
 
   // Mirror `user` into a ref so the auth listener can read the latest value
   // without re-subscribing (keeps the subscription stable for the app's life).
@@ -150,7 +152,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // refresh from any tab. onAuthStateChange fires INITIAL_SESSION immediately
   // on subscribe, which covers the cold-start case (no separate getSession()).
   useEffect(() => {
-    if (DEV_SKIP_AUTH) return;
+    if (AUTH_BYPASS) return;
     let active = true;
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (!active) return;
@@ -178,7 +180,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadUser]);
 
   const login = useCallback(async (email: string, password: string) => {
-    if (DEV_SKIP_AUTH) return DEV_MOCK_USER;
+    if (AUTH_BYPASS) return BYPASS_USER;
     await loginEmail(email, password);
     const u = await loadUser();
     return (u ?? (null as unknown as AuthUser));
@@ -190,7 +192,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * then we sign in to establish a Supabase session.
    */
   const signup = useCallback(async (email: string, password: string, displayName: string) => {
-    if (DEV_SKIP_AUTH) return DEV_MOCK_USER;
+    if (AUTH_BYPASS) return BYPASS_USER;
     const { needsEmailConfirmation } = await signupEmail(email, password, displayName);
 
     if (!needsEmailConfirmation) {
@@ -212,7 +214,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadUser]);
 
   const logout = useCallback(async () => {
-    if (DEV_SKIP_AUTH) return; // permanently "signed in" in this mode
+    if (AUTH_BYPASS) return; // permanently "signed in" in this mode
     await apiLogout();
     setToken(null);
     setUser(null);
@@ -223,7 +225,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // reflects the new profileComplete + fullName without a hard reload. Bypasses
   // the "already have a user" short-circuit by clearing the dedup slot first.
   const refetch = useCallback(async () => {
-    if (DEV_SKIP_AUTH) return DEV_MOCK_USER;
+    if (AUTH_BYPASS) return BYPASS_USER;
     if (!token) return null;
     inflightRef.current = null;
     return loadUser();
