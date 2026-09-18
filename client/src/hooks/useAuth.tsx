@@ -38,7 +38,6 @@ import {
   AUTH_USER_KEY,
   fetchAppUser,
   loginEmail,
-  loginGoogle,
   signupEmail,
   devConfirmEmail,
   logout as apiLogout,
@@ -46,6 +45,25 @@ import {
 } from "../lib/auth";
 
 const SUPA_STORAGE_KEY = "prepnext.supabase.auth.v1";
+
+// Local-dev escape hatch: when no real Supabase project is wired up yet
+// (VITE_SUPABASE_URL/ANON_KEY are placeholders), set VITE_DEV_SKIP_AUTH=true
+// in client/.env to bypass Supabase entirely and act as a permanently
+// signed-in mock user. Lets every RequireAuth-gated page render locally
+// before a database exists. Never set this in production.
+const DEV_SKIP_AUTH = import.meta.env.VITE_DEV_SKIP_AUTH === "true";
+const DEV_MOCK_TOKEN = "dev-skip-auth-token";
+const DEV_MOCK_USER: AuthUser = {
+  id: "dev-local-user",
+  email: "dev@localhost",
+  displayName: "Dev User",
+  profileComplete: true,
+  fullName: "Dev User",
+  collegeName: "Local Dev",
+  branch: "CSE",
+  yearOfStudy: 3,
+  targetRoles: ["SDE"],
+};
 
 /** Read the token synchronously from Supabase's localStorage (set by supabase-js). */
 function readInitialToken(): string | null {
@@ -80,7 +98,6 @@ export interface AuthContextValue {
   loading: boolean;
   login: (email: string, password: string) => Promise<AuthUser>;
   signup: (email: string, password: string, displayName: string) => Promise<AuthUser>;
-  google: () => Promise<void>;
   logout: () => Promise<void>;
   refetch: () => Promise<AuthUser | null>;
 }
@@ -94,9 +111,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
  */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Prime from localStorage so the first render already reflects a logged-in user.
-  const [token, setToken] = useState<string | null>(readInitialToken);
-  const [user, setUser] = useState<AuthUser | null>(readInitialUser);
-  const [loading, setLoading] = useState<boolean>(() => !readInitialToken());
+  const [token, setToken] = useState<string | null>(() => (DEV_SKIP_AUTH ? DEV_MOCK_TOKEN : readInitialToken()));
+  const [user, setUser] = useState<AuthUser | null>(() => (DEV_SKIP_AUTH ? DEV_MOCK_USER : readInitialUser()));
+  const [loading, setLoading] = useState<boolean>(() => (DEV_SKIP_AUTH ? false : !readInitialToken()));
 
   // Mirror `user` into a ref so the auth listener can read the latest value
   // without re-subscribing (keeps the subscription stable for the app's life).
@@ -133,6 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // refresh from any tab. onAuthStateChange fires INITIAL_SESSION immediately
   // on subscribe, which covers the cold-start case (no separate getSession()).
   useEffect(() => {
+    if (DEV_SKIP_AUTH) return;
     let active = true;
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (!active) return;
@@ -160,6 +178,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadUser]);
 
   const login = useCallback(async (email: string, password: string) => {
+    if (DEV_SKIP_AUTH) return DEV_MOCK_USER;
     await loginEmail(email, password);
     const u = await loadUser();
     return (u ?? (null as unknown as AuthUser));
@@ -171,6 +190,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * then we sign in to establish a Supabase session.
    */
   const signup = useCallback(async (email: string, password: string, displayName: string) => {
+    if (DEV_SKIP_AUTH) return DEV_MOCK_USER;
     const { needsEmailConfirmation } = await signupEmail(email, password, displayName);
 
     if (!needsEmailConfirmation) {
@@ -191,11 +211,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { id: "", email, displayName, emailVerified: false } as AuthUser;
   }, [loadUser]);
 
-  const google = useCallback(async () => {
-    await loginGoogle();
-  }, []);
-
   const logout = useCallback(async () => {
+    if (DEV_SKIP_AUTH) return; // permanently "signed in" in this mode
     await apiLogout();
     setToken(null);
     setUser(null);
@@ -206,6 +223,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // reflects the new profileComplete + fullName without a hard reload. Bypasses
   // the "already have a user" short-circuit by clearing the dedup slot first.
   const refetch = useCallback(async () => {
+    if (DEV_SKIP_AUTH) return DEV_MOCK_USER;
     if (!token) return null;
     inflightRef.current = null;
     return loadUser();
@@ -218,10 +236,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loading,
     login,
     signup,
-    google,
     logout,
     refetch,
-  }), [token, user, loading, login, signup, google, logout, refetch]);
+  }), [token, user, loading, login, signup, logout, refetch]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

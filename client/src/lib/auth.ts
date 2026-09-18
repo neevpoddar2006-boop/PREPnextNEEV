@@ -2,7 +2,6 @@
 //
 // Why Supabase Auth and not our own JWT:
 //   - Email verification built in (anti–any-email-gets-in attack)
-//   - Google OAuth built in
 //   - Magic links + password reset built in
 //   - Session refresh + rotation handled
 //   - Login attempt throttling handled
@@ -237,25 +236,6 @@ export async function saveProfile(payload: ProfileSetupPayload): Promise<AuthUse
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
   return json.user as AuthUser;
-}
-
-/**
- * Kick off Google OAuth (full-page redirect to Google, back to /auth/callback).
- *
- * We deliberately DON'T pass `prompt: "consent"` / `access_type: "offline"`.
- * Those force Google's account-picker + consent screen on EVERY sign-in — even
- * for returning users who already granted access — which made re-login feel
- * slow and "reload-y". Supabase manages its own session refresh (it doesn't
- * need Google's offline refresh token), so once a user has consented, Google
- * bounces them straight back and login feels instant.
- */
-export async function loginGoogle(): Promise<void> {
-  const redirectTo = `${window.location.origin}/auth/callback`;
-  const { error } = await supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: { redirectTo },
-  });
-  if (error) throw new Error(error.message);
 }
 
 export async function requestPasswordReset(email: string): Promise<void> {

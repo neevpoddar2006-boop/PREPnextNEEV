@@ -75,7 +75,7 @@ r.patch("/me", requireAuth, async (req, res, next) => {
  * Required: fullName, collegeName, branch, yearOfStudy, targetRoles (>=1).
  * Optional: linkedinUrl, githubUrl.
  *
- * Saves the profile-setup form filled in after Google sign-in. Flips
+ * Saves the profile-setup form filled in after sign-up. Flips
  * `profileComplete` so AuthCallback stops bouncing the user back to /onboarding.
  *
  * All fields are validated server-side (the client sends a typed object, but
@@ -303,15 +303,78 @@ r.post("/dev-confirm", async (req, res, next) => {
   }
 });
 
-// Signup + login moved entirely to OTP via Supabase. The client calls
-// supabase.auth.signInWithOtp() to send the code and supabase.auth.verifyOtp()
-// to consume it. The server only validates the email beforehand (above) so we
-// don't waste a rate-limited send on garbage addresses.
-r.post("/signup", (_req, res) =>
-  res.status(410).json({ error: "Signup moved to OTP email verification. Use /api/auth/validate-email then supabase.auth.signInWithOtp." })
-);
+/**
+ * POST /api/auth/signup  { email, password, displayName }
+ *
+ * Server-side signup using the Supabase Admin API. This bypasses Supabase's
+ * public /auth/v1/signup endpoint entirely, which means:
+ *   - No confirmation email is sent (`email_confirm: true` marks it verified).
+ *   - Not subject to Supabase's free-tier email rate limit
+ *     ("over_email_send_rate_limit" error that blocks the public endpoint).
+ *   - Works regardless of the "Confirm email" toggle in the dashboard.
+ *
+ * The client then signs in via supabase.auth.signInWithPassword() to get a
+ * session (see lib/auth.ts signupEmail()). We deliberately don't return
+ * tokens here — keep tokens client-side.
+ */
+const MIN_PW = 8;
+const MAX_FIELD = 200;
+
+r.post("/signup", async (req, res, next) => {
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const password = req.body?.password;
+    const displayName = String(req.body?.displayName || "").trim() || email.split("@")[0];
+
+    if (displayName.length > MAX_FIELD) {
+      return res.status(400).json({ error: "Display name too long" });
+    }
+    if (typeof password !== "string" || password.length < MIN_PW || password.length > MAX_FIELD) {
+      return res.status(400).json({ error: `Password must be ${MIN_PW}-${MAX_FIELD} characters` });
+    }
+
+    const v = await validateEmail(email);
+    if (!v.ok) return res.status(400).json({ error: v.reason || "That email isn't accepted." });
+
+    const admin = getSupabaseAdmin();
+
+    // Create the user pre-confirmed — no email sent, no rate limit.
+    const { data, error } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { display_name: displayName },
+    });
+
+    if (error) {
+      // Supabase admin returns 422 on duplicate; map to a friendly 409.
+      const msg = (error.message || "").toLowerCase();
+      if (
+        msg.includes("already") ||
+        msg.includes("duplicate") ||
+        msg.includes("user_already_exists") ||
+        msg.includes("registered")
+      ) {
+        return res.status(409).json({ error: "An account with this email already exists" });
+      }
+      console.error("[signup] admin.createUser failed:", error);
+      return res.status(502).json({ error: "Couldn't create account" });
+    }
+
+    res.status(201).json({
+      ok: true,
+      user: { id: data.user?.id, email: data.user?.email, displayName },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Legacy login endpoint — login goes through the Supabase JS client directly
+// (supabase.auth.signInWithPassword in lib/auth.ts), so nothing hits the
+// server for login.
 r.post("/login", (_req, res) =>
-  res.status(410).json({ error: "Login moved to OTP email verification. Use supabase.auth.signInWithOtp." })
+  res.status(410).json({ error: "Login goes through the Supabase client directly." })
 );
 
 export default r;

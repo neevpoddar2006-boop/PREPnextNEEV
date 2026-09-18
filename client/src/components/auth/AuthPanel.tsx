@@ -1,35 +1,41 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { LogOut, ArrowRight, Loader2 } from "lucide-react";
+import { LogOut, ArrowRight, Loader2, Mail, Lock, User } from "lucide-react";
 import { Button } from "../ui/Button";
 import { useAuth } from "../../hooks/useAuth";
-import { loginGoogle } from "../../lib/auth";
+import { requestPasswordReset } from "../../lib/auth";
 
 const shell =
   "w-full max-w-md rounded-3xl border border-[var(--color-line)] bg-[var(--color-card-soft)] backdrop-blur-2xl p-6 sm:p-7 shadow-[0_8px_50px_rgba(0,0,0,0.45)] ring-1 ring-[var(--color-neon)]/10";
+const inputCls =
+  "w-full mt-1 bg-[var(--color-input)] border border-[var(--color-line)] rounded-xl px-3.5 py-2.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] outline-none focus:border-[var(--color-neon)] focus:bg-[var(--color-input-strong)] transition-colors";
+const labelCls = "text-[11px] uppercase tracking-widest text-[var(--color-text-faint)] mono flex items-center gap-1.5";
 
 interface AuthPanelProps {
   redirectTo?: string;
 }
 
-// Auth surface — Google OAuth only.
+type Mode = "login" | "signup" | "forgot";
+
+// Auth surface — email + password.
 //
-// We dropped the email-OTP flow entirely: Supabase's free-tier mailer is
-// unreliable (intermittent 500 "Error sending confirmation email"), and even
-// with a server-side magic-link fallback the UX was messier than a one-tap
-// Google sign-in. Cuts a class of bugs + no email infra to maintain.
-//
-// After Google sign-in lands, AuthCallback bounces:
-//   - profileComplete === false  → /onboarding (collect college/branch/year)
-//   - profileComplete === true   → /dashboard (intended destination)
+// New users sign up with name/email/password (created pre-confirmed
+// server-side via /api/auth/signup, no email delivery required); returning
+// users sign in with email/password. "Forgot password" sends a reset link
+// through Supabase, landing back on /auth/callback?intent=reset.
 export function AuthPanel({ redirectTo }: AuthPanelProps = {}) {
-  const { isAuthenticated, user, logout } = useAuth();
+  const { isAuthenticated, user, logout, login, signup } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const dest = redirectTo || (location.state as { from?: string } | null)?.from || "/dashboard";
 
+  const [mode, setMode] = useState<Mode>("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   const [didAuth, setDidAuth] = useState(false);
   useEffect(() => {
@@ -57,80 +63,184 @@ export function AuthPanel({ redirectTo }: AuthPanelProps = {}) {
     );
   }
 
-  const onGoogle = async () => {
-    setError(null);
+  const resetMessages = () => { setError(null); setInfo(null); };
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    resetMessages();
+    const cleanedEmail = email.trim().toLowerCase();
+    if (!cleanedEmail) return setError("Enter your email.");
+
+    if (mode === "forgot") {
+      setBusy(true);
+      try {
+        await requestPasswordReset(cleanedEmail);
+        setInfo("If an account exists for that email, a reset link is on its way.");
+      } catch (err: any) {
+        setError(err?.message || "Couldn't send reset email.");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    if (password.length < 8) return setError("Password must be at least 8 characters.");
+    if (mode === "signup" && !displayName.trim()) return setError("Enter your name.");
+
     setBusy(true);
     setDidAuth(true);
     try {
-      await loginGoogle();
-      // Redirect is handled by Supabase's OAuth flow → /auth/callback
+      if (mode === "signup") {
+        await signup(cleanedEmail, password, displayName.trim());
+      } else {
+        await login(cleanedEmail, password);
+      }
+      // Redirect handled by the effect above once isAuthenticated flips.
     } catch (err: any) {
-      setError(err?.message || "Google sign-in failed");
+      setError(err?.message || (mode === "signup" ? "Couldn't create account." : "Sign-in failed."));
       setBusy(false);
       setDidAuth(false);
     }
   };
 
+  const switchMode = (m: Mode) => {
+    resetMessages();
+    setMode(m);
+  };
+
   return (
     <div className={shell}>
-      <div className="mono text-xs uppercase tracking-[0.3em] text-[var(--color-neon)] mb-2">· sign in ·</div>
-      <div className="display text-2xl">One tap.</div>
+      <div className="mono text-xs uppercase tracking-[0.3em] text-[var(--color-neon)] mb-2">
+        · {mode === "signup" ? "create account" : mode === "forgot" ? "reset password" : "sign in"} ·
+      </div>
+      <div className="display text-2xl">
+        {mode === "signup" ? "Join PrepNext." : mode === "forgot" ? "Forgot your password?" : "Welcome back."}
+      </div>
       <p className="text-[var(--color-text-dim)] text-sm mt-2">
-        We sign you in with your Google account so you don't manage another password. New users
-        finish a short profile after sign-in.
+        {mode === "signup"
+          ? "Create an account with your email and a password."
+          : mode === "forgot"
+          ? "Enter your email and we'll send you a reset link."
+          : "Sign in with your email and password."}
       </p>
 
-      <button
-        type="button"
-        onClick={onGoogle}
-        disabled={busy}
-        className="mt-6 w-full inline-flex items-center justify-center gap-3 rounded-xl border border-[var(--color-line)] bg-[var(--color-input)] hover:bg-[var(--color-input-strong)] px-3.5 py-3 text-sm font-medium text-[var(--color-text)] transition-colors disabled:opacity-50"
-      >
-        {busy ? (
+      <form onSubmit={onSubmit} className="space-y-4 mt-6">
+        {mode === "signup" && (
+          <div>
+            <label className={labelCls} htmlFor="auth-name">
+              <User className="w-3 h-3" /> Full name
+            </label>
+            <input
+              id="auth-name"
+              className={inputCls}
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="Aarav Sharma"
+              autoComplete="name"
+              maxLength={80}
+              required
+            />
+          </div>
+        )}
+
+        <div>
+          <label className={labelCls} htmlFor="auth-email">
+            <Mail className="w-3 h-3" /> Email
+          </label>
+          <input
+            id="auth-email"
+            type="email"
+            className={inputCls}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@college.edu"
+            autoComplete="email"
+            maxLength={200}
+            required
+          />
+        </div>
+
+        {mode !== "forgot" && (
+          <div>
+            <label className={labelCls} htmlFor="auth-password">
+              <Lock className="w-3 h-3" /> Password
+            </label>
+            <input
+              id="auth-password"
+              type="password"
+              className={inputCls}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="At least 8 characters"
+              autoComplete={mode === "signup" ? "new-password" : "current-password"}
+              minLength={8}
+              maxLength={200}
+              required
+            />
+          </div>
+        )}
+
+        {error && (
+          <div className="text-[#ff5247] text-sm" role="alert">
+            {error}
+          </div>
+        )}
+        {info && <div className="text-[var(--color-neon-text)] text-xs">{info}</div>}
+
+        <Button type="submit" fullWidth disabled={busy}>
+          {busy ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              {mode === "signup" ? "Creating account…" : mode === "forgot" ? "Sending…" : "Signing in…"}
+            </>
+          ) : mode === "signup" ? (
+            "Create account"
+          ) : mode === "forgot" ? (
+            "Send reset link"
+          ) : (
+            "Sign in"
+          )}
+        </Button>
+      </form>
+
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-2 text-xs">
+        {mode === "login" && (
           <>
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Redirecting to Google…
-          </>
-        ) : (
-          <>
-            <GoogleLogo />
-            Continue with Google
+            <button
+              type="button"
+              className="text-[var(--color-text-faint)] hover:text-[var(--color-text)]"
+              onClick={() => switchMode("forgot")}
+            >
+              Forgot password?
+            </button>
+            <button
+              type="button"
+              className="text-[var(--color-neon)] hover:underline"
+              onClick={() => switchMode("signup")}
+            >
+              New here? Create an account →
+            </button>
           </>
         )}
-      </button>
-
-      {error && (
-        <div className="mt-3 text-[#ff5247] text-sm" role="alert">
-          {error}
-        </div>
-      )}
-
-      <div className="mt-6 grid gap-2 text-[11px] text-[var(--color-text-faint)] leading-relaxed">
-        <div className="flex items-start gap-2">
-          <span className="text-[var(--color-neon)]">·</span>
-          <span>30-second setup. No card, no questionnaire.</span>
-        </div>
-        <div className="flex items-start gap-2">
-          <span className="text-[var(--color-neon)]">·</span>
-          <span>We only read your name + email from Google. Never your contacts or Drive.</span>
-        </div>
-        <div className="flex items-start gap-2">
-          <span className="text-[var(--color-neon)]">·</span>
-          <span>Free forever for the basics. Upgrade anytime.</span>
-        </div>
+        {mode === "signup" && (
+          <button
+            type="button"
+            className="text-[var(--color-neon)] hover:underline"
+            onClick={() => switchMode("login")}
+          >
+            Already have an account? Sign in →
+          </button>
+        )}
+        {mode === "forgot" && (
+          <button
+            type="button"
+            className="text-[var(--color-neon)] hover:underline"
+            onClick={() => switchMode("login")}
+          >
+            ← Back to sign in
+          </button>
+        )}
       </div>
     </div>
-  );
-}
-
-// Google "G" glyph (official colors)
-function GoogleLogo() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
-      <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.7 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 7.9 3l5.6-5.6C34.9 6 29.7 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/>
-      <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 16 18.9 13 24 13c3.1 0 5.8 1.1 7.9 3l5.6-5.6C34.9 6 29.7 4 24 4 16 4 9.1 8.5 6.3 14.7z"/>
-      <path fill="#4CAF50" d="M24 44c5.6 0 10.7-2.1 14.5-5.6l-6.7-5.5C29.5 34.7 26.9 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.6 5.1C9 39.4 16 44 24 44z"/>
-      <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.3 5.7l6.7 5.5C41 35.5 44 30.2 44 24c0-1.3-.1-2.4-.4-3.5z"/>
-    </svg>
   );
 }

@@ -10,7 +10,7 @@ import { useAuth } from "../hooks/useAuth";
 import { saveProfile } from "../lib/auth";
 import { usePageMeta } from "../hooks/usePageMeta";
 
-// Profile-setup screen — shown right after Google sign-in for users whose
+// Profile-setup screen — shown right after sign-up for users whose
 // profileComplete=false. Until they submit a valid form, AuthCallback bounces
 // them back here.
 //
@@ -178,7 +178,7 @@ export default function Onboarding() {
                   value={user?.email || ""}
                   disabled
                 />
-                <div className="text-[10px] text-[var(--color-text-faint)] mt-1">From Google.</div>
+                <div className="text-[10px] text-[var(--color-text-faint)] mt-1">Set at signup.</div>
               </div>
             </div>
           </Card>

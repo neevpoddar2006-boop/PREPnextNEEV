@@ -4,7 +4,7 @@
 
 PrepNext is a full-stack, production-deployed platform that takes a college
 student through the **entire placement journey in one place** —
-**Learn → Practice → Build → Interview → Placement** — with Google sign-in,
+**Learn → Practice → Build → Interview → Placement** — with email sign-in,
 a single **Placement Readiness Score**, and structured, opinionated content end
 to end.
 
@@ -37,7 +37,7 @@ Interview-ready → Placement-ready).
 ## Highlights
 
 - **Full-stack TypeScript/Node app** on **Vercel** (static SPA + serverless API) with managed **PostgreSQL** on **Supabase**.
-- **Google authentication** via Supabase Auth — server-verified JWTs, centralized route guards, enforced profile completion, per-user isolation.
+- **Email + password authentication** via Supabase Auth — server-verified JWTs, centralized route guards, enforced profile completion, per-user isolation.
 - **Journey-based navigation** — primary nav (Dashboard, DSA, Patterns, Aptitude, Projects, Mock OA) plus a grouped Prep menu (Practice / Interview / Placement).
 - **Placement Readiness Score** — one 0–100 metric across the whole journey, on the dashboard.
 - **Projects module** — **10 domains, 30 structured projects** (Web, Backend, AI/ML, Cybersecurity, Cloud, DevOps, Mobile, Blockchain, Data Science, Open Source) with per-project detail and difficulty paths.
@@ -57,7 +57,7 @@ React SPA (Vercel static)
 Express app as a Vercel serverless function (api/index.js → server/app.js)
    │  Prisma  +  @prisma/adapter-pg
    ▼
-PostgreSQL (Supabase)  +  Supabase Auth (Google)
+PostgreSQL (Supabase)  +  Supabase Auth (email + password)
 ```
 
 - **Frontend** and **API** are served from one Vercel domain; a rewrite routes `/api/*` into the serverless function.
@@ -74,7 +74,7 @@ PostgreSQL (Supabase)  +  Supabase Auth (Google)
 | **Frontend** | React 19, TypeScript, Vite 7, Tailwind CSS v4 (`@theme` tokens), React Router 7, framer-motion, react-markdown, jsPDF + qrcode |
 | **Backend** | Node 20, Express 4 (ESM), Vercel serverless functions |
 | **Database** | PostgreSQL (Supabase), Prisma ORM, `@prisma/adapter-pg`, SQL migrations |
-| **Auth** | Supabase Auth (Google OAuth); server-side JWT verification + route guards |
+| **Auth** | Supabase Auth (email + password); server-side JWT verification + route guards |
 | **Infra / DevOps** | Vercel (hosting + serverless), Supabase (managed Postgres + Auth), Git-based CI/CD |
 
 ---
@@ -99,7 +99,7 @@ PostgreSQL (Supabase)  +  Supabase Auth (Google)
 - **Per-company prep kits**, salary insights, company compare, mastery radar, and verifiable **certificates** (PDF + QR + verify URL).
 
 ### Accounts & data
-- Google sign-in (Supabase Auth) with single-tap auth and intended-destination redirect.
+- Email + password sign-in (Supabase Auth) with intended-destination redirect.
 - Centralized route protection; direct-URL access to protected pages is guarded.
 - Per-user data isolation so accounts never share progress on the same device.
 
