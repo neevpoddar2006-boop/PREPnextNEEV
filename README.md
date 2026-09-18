@@ -112,8 +112,8 @@ PostgreSQL (Supabase)  +  Supabase Auth (email + password)
 
 ```bash
 # 1. Clone and install dependencies (root + client)
-git clone https://github.com/ashutoshsharma1309/palsed.git
-cd palsed
+git clone https://github.com/neevpoddar2006-boop/PREPnextNEEV.git
+cd PREPnextNEEV
 npm run install:all
 
 # 2. Configure environment
@@ -168,5 +168,3 @@ phased build plan live in [`SAAS_READINESS.md`](SAAS_READINESS.md),
 a TPO/admin cohort dashboard, SSO + CSV bulk onboarding, and multi-tenancy.
 
 ---
-
-Made by **Ashutosh Sharma** — [www.linkedin.com/in/ashutoshsharma1309](https://www.linkedin.com/in/ashutoshsharma1309)

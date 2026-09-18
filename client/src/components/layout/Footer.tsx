@@ -10,17 +10,6 @@ export function Footer() {
         </div>
         <div className="text-xs text-[var(--color-text-faint)] mono md:text-right">
           <div>© {new Date().getFullYear()} PrepNext. All rights reserved.</div>
-          <div className="mt-2 text-[var(--color-text-faint)]">
-            Made by Ashutosh Sharma ·{" "}
-            <a
-              href="https://www.linkedin.com/in/ashutoshsharma1309"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[var(--color-neon)] hover:underline"
-            >
-              linkedin.com/in/ashutoshsharma1309
-            </a>
-          </div>
         </div>
       </div>
     </footer>
